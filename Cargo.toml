@@ -13,8 +13,8 @@ opt-level = 1
 
 [dependencies]
 bevy = { version = "0.9.1", features = ["dynamic"] }
-bevy_hanabi = { version = "0.5", default-features = false, features = [ "2d" ] }
 leafwing-input-manager = "0.8.0"
 bevy-inspector-egui = "0.17.0"
 bevy-inspector-egui-rapier = { version = "0.9.0", features = [ "rapier2d" ] }
 bevy_rapier2d = { version = "0.20.0", features = ["simd-stable" ] }
+bevy_hanabi = { git = "https://github.com/djeedai/bevy_hanabi", default-features = false, features = [ "2d" ] }

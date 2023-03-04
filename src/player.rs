@@ -4,6 +4,7 @@ use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
 use bevy::sprite::MaterialMesh2dBundle;
 use leafwing_input_manager::prelude::*;
+use leafwing_input_manager::user_input::InputKind;
 
 use crate::bullet::{Bullet, BulletEffects};
 use crate::mouse::MousePos;
@@ -32,13 +33,15 @@ enum Action {
 
 impl Action {
     fn player_one() -> InputMap<Self> {
-        InputMap::new([
+        let mut input_map = InputMap::new([
             (KeyCode::W, Action::Up),
             (KeyCode::A, Action::Left),
             (KeyCode::S, Action::Down),
             (KeyCode::D, Action::Right),
             (KeyCode::F, Action::Shoot),
-        ])
+        ]);
+        input_map.insert(InputKind::Mouse(MouseButton::Left), Action::Shoot);
+        input_map
     }
 }
 
@@ -55,15 +58,14 @@ fn shoot(
     mut commands: Commands,
     player: Query<(&Transform, &ActionState<Action>), With<Player>>,
     bullet_effects: Res<BulletEffects>,
-    mpos: Res<MousePos>,
 ) {
     let (tf, actions) = player.single();
 
     if actions.just_pressed(Action::Shoot) {
         Bullet::spawn(
             &mut commands,
-            tf.translation,
-            mpos.0 - tf.translation.xy(),
+            tf.translation - 50.0 * tf.right(),
+            -tf.right().xy(),
             bullet_effects.trail.clone(),
         );
     }
@@ -101,7 +103,7 @@ fn orient_player(
     let movement = (ANGULAR_SPEED / tf.rotation.angle_between(target_angle) * time.delta_seconds())
         .clamp(0.0, 1.0);
 
-    tf.rotation = tf.rotation.slerp(target_angle, movement);
+    tf.rotation = tf.rotation.slerp(target_angle, movement.sqrt());
 }
 
 fn move_player(
