@@ -3488,6 +3488,8 @@ dependencies = [
  "bevy_hanabi",
  "bevy_rapier2d 0.20.0",
  "leafwing-input-manager",
+ "serde",
+ "typetag",
 ]
 
 [[package]]

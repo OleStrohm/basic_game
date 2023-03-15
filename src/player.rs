@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
 
 use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
@@ -16,7 +16,8 @@ impl Plugin for PlayerPlugin {
         app.add_plugin(InputManagerPlugin::<Action>::default())
             .add_startup_system(spawn_player)
             .add_system(move_player)
-            .add_system(orient_player.after(move_player))
+            .add_system(update_player_pos.after(move_player))
+            .add_system(orient_player.after(update_player_pos))
             .add_system(orient_legs.after(orient_player))
             .add_system(shoot);
     }
@@ -54,6 +55,9 @@ struct LowerBody;
 #[derive(Component)]
 struct UpperBody;
 
+#[derive(Component, Deref, DerefMut)]
+struct MoveDir(Vec2);
+
 fn shoot(
     mut commands: Commands,
     player: Query<(&Transform, &ActionState<Action>), With<Player>>,
@@ -72,20 +76,26 @@ fn shoot(
 }
 
 fn orient_legs(
-    player: Query<&Transform, With<Player>>,
+    player: Query<(&Transform, &MoveDir), With<Player>>,
     mut legs: Query<&mut Transform, (Without<Player>, Without<UpperBody>, With<LowerBody>)>,
-    mut state: Local<(f32, Vec3)>,
+    mut angle: Local<f32>,
 ) {
-    let tf = player.single();
+    let (player_tf, move_dir) = player.single();
     let mut legs_tf = legs.single_mut();
 
-    if tf.translation != state.1 {
-        let movement_dir = tf.translation - state.1;
-        state.0 = movement_dir.y.atan2(movement_dir.x) + PI / 2.0;
-        state.1 = tf.translation;
+    if **move_dir != Vec2::ZERO {
+        *angle = move_dir.y.atan2(move_dir.x);
+        if move_dir.dot(-player_tf.right().xy()) < 0.0 {
+            *angle = (*angle + PI).rem_euclid(TAU);
+        }
     }
 
-    legs_tf.rotation = tf.rotation.inverse() * Quat::from_rotation_z(state.0);
+    let leg_diff = (*angle - player_tf.rotation.to_euler(EulerRot::ZYX).0).rem_euclid(TAU) - PI;
+    if leg_diff.abs() > PI / 4.0 {
+        *angle -= PI / 4.0 * leg_diff.signum();
+    }
+
+    legs_tf.rotation = player_tf.rotation.inverse() * Quat::from_rotation_z(*angle);
 }
 
 fn orient_player(
@@ -99,7 +109,7 @@ fn orient_player(
     let target_angle = Quat::from_rotation_z(look_dir.y.atan2(look_dir.x));
 
     // Limit speed of rotation
-    const ANGULAR_SPEED: f32 = 360.0 / 180.0 * PI;
+    const ANGULAR_SPEED: f32 = 180.0 / 180.0 * PI;
     let movement = (ANGULAR_SPEED / tf.rotation.angle_between(target_angle) * time.delta_seconds())
         .clamp(0.0, 1.0);
 
@@ -107,24 +117,33 @@ fn orient_player(
 }
 
 fn move_player(
-    mut player: Query<(&mut Transform, &ActionState<Action>), With<Player>>,
+    mut player: Query<(&mut MoveDir, &ActionState<Action>), With<Player>>,
     time: Res<Time>,
 ) {
-    let (mut tf, actions) = player.single_mut();
-    let speed = 200. * time.delta_seconds();
-
+    let (mut move_dir, actions) = player.single_mut();
+    let mut dir = Vec2::ZERO;
     if actions.pressed(Action::Up) {
-        tf.translation += Vec3::Y * speed;
+        dir += Vec2::Y;
     }
     if actions.pressed(Action::Down) {
-        tf.translation += Vec3::NEG_Y * speed;
+        dir += Vec2::NEG_Y;
     }
     if actions.pressed(Action::Left) {
-        tf.translation += Vec3::NEG_X * speed;
+        dir += Vec2::NEG_X;
     }
     if actions.pressed(Action::Right) {
-        tf.translation += Vec3::X * speed;
+        dir += Vec2::X;
     }
+    let speed = 200. * time.delta_seconds();
+
+    dir = speed * dir.normalize_or_zero();
+
+    **move_dir = dir;
+}
+
+fn update_player_pos(mut player: Query<(&mut Transform, &MoveDir), With<Player>>) {
+    let (mut tf, dir) = player.single_mut();
+    tf.translation += dir.extend(0.0);
 }
 
 fn spawn_player(
@@ -144,6 +163,7 @@ fn spawn_player(
                 input_map: Action::player_one(),
                 ..default()
             },
+            MoveDir(Vec2::ZERO),
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -162,17 +182,27 @@ fn spawn_player(
                 },
                 UpperBody,
             ));
-            parent.spawn((
-                Name::new("Lower body"),
-                SpriteBundle {
-                    sprite: Sprite {
-                        color: Color::BEIGE,
-                        custom_size: Some(Vec2::new(100.0, 50.0)),
+            parent
+                .spawn((Name::new("Lower body"), SpatialBundle::default(), LowerBody))
+                .with_children(|parent| {
+                    parent.spawn(SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::GRAY,
+                            custom_size: Some(Vec2::new(25.0, 80.0)),
+                            ..default()
+                        },
+                        transform: Transform::from_xyz(12.5, 0.0, 0.0),
                         ..default()
-                    },
-                    ..default()
-                },
-                LowerBody,
-            ));
+                    });
+                    parent.spawn(SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::DARK_GRAY,
+                            custom_size: Some(Vec2::new(25.0, 100.0)),
+                            ..default()
+                        },
+                        transform: Transform::from_xyz(-12.5, 0.0, 0.0),
+                        ..default()
+                    });
+                });
         });
 }
